@@ -76,7 +76,8 @@ bool esp_osc_send_v(esp_osc_client_t *client, esp_osc_target_t *target, const ch
 
   // send message
   if (sendto(client->socket, client->sbuf, length, 0, (struct sockaddr *)&target->addr, sizeof(target->addr)) < 0) {
-    ESP_LOGE(TAG, "failed to send message (%d)", errno);
+    int err = errno;  // Save it immediately
+    ESP_LOGE(TAG, "sendto() failed: errno=%d (%s)", err, strerror(err));
     return false;
   }
 
@@ -91,7 +92,8 @@ bool esp_osc_receive(esp_osc_client_t *client, esp_osc_callback_t callback) {
     // receive message
     ssize_t ret = recvfrom(client->socket, client->rbuf, client->len, 0, NULL, NULL);
     if (ret < 0) {
-      ESP_LOGE(TAG, "failed to receive message (%d)", errno);
+      int err = errno;  // Save it immediately
+      ESP_LOGE(TAG, "recvfrom() failed: errno=%d (%s)", err, strerror(err));
       return false;
     } else if (ret > client->len) {
       ESP_LOGE(TAG, "discard too long message (%d)", ret);
