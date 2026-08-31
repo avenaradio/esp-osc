@@ -276,7 +276,7 @@ void tosc_printOscBuffer(char *buffer, const int len) {
 }
 
 void tosc_printMessage(tosc_message *osc) {
-  printf("[%lu bytes] %s %s",
+  printf("[%u bytes] %s %s",
          osc->len,              // the number of bytes in the OSC message
          tosc_getAddress(osc),  // the OSC address string, e.g. "/button1"
          tosc_getFormat(osc));  // the OSC format string, e.g. "f"
@@ -303,7 +303,7 @@ void tosc_printMessage(tosc_message *osc) {
         printf(" %g", tosc_getNextDouble(osc));
         break;
       case 'i':
-        printf(" %ld", tosc_getNextInt32(osc));
+        printf(" %d", tosc_getNextInt32(osc));
         break;
       case 'h':
         printf(" %lld", tosc_getNextInt64(osc));
