@@ -91,6 +91,7 @@ bool esp_osc_receive(esp_osc_client_t *client, esp_osc_callback_t callback) {
   for (;;) {
     // receive message
     ssize_t ret = recvfrom(client->socket, client->rbuf, client->len, 0, NULL, NULL);
+    //ESP_LOGI(TAG, "got message: %s", client->rbuf);
     if (ret < 0) {
       int err = errno;  // Save it immediately
       ESP_LOGE(TAG, "recvfrom() failed: errno=%d (%s)", err, strerror(err));
