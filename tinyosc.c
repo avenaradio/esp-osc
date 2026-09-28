@@ -18,6 +18,8 @@
 #include <stdarg.h>
 #include <string.h>
 #include <stdio.h>
+#include <inttypes.h>
+
 #if _WIN32
 #include <winsock2.h>
 #define tosc_strncpy(_dst, _src, _len) strncpy_s(_dst, _len, _src, _TRUNCATE)
@@ -276,7 +278,7 @@ void tosc_printOscBuffer(char *buffer, const int len) {
 }
 
 void tosc_printMessage(tosc_message *osc) {
-  printf("[%u bytes] %s %s",
+  printf("[%" PRIu32 " bytes] %s %s",
          osc->len,              // the number of bytes in the OSC message
          tosc_getAddress(osc),  // the OSC address string, e.g. "/button1"
          tosc_getFormat(osc));  // the OSC format string, e.g. "f"
@@ -303,13 +305,13 @@ void tosc_printMessage(tosc_message *osc) {
         printf(" %g", tosc_getNextDouble(osc));
         break;
       case 'i':
-        printf(" %d", tosc_getNextInt32(osc));
+        printf(" %" PRId32, tosc_getNextInt32(osc));
         break;
       case 'h':
-        printf(" %lld", tosc_getNextInt64(osc));
+        printf(" %" PRId64, tosc_getNextInt64(osc));
         break;
       case 't':
-        printf(" %lld", tosc_getNextTimetag(osc));
+        printf(" %" PRId64, tosc_getNextTimetag(osc));
         break;
       case 's':
         printf(" %s", tosc_getNextString(osc));
