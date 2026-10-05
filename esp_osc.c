@@ -1,10 +1,67 @@
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/queue.h>
+
 #include <esp_log.h>
 
 #include "esp_osc.h"
 
 #define TAG "esp-osc"
+
+#define ESP_OSC_MAX_PACKET_SIZE 1024
+#define ESP_OSC_QUEUE_LENGTH 16
+
+typedef struct {
+  size_t len;
+  uint8_t data[ESP_OSC_MAX_PACKET_SIZE];
+} esp_osc_packet_t;
+
+static QueueHandle_t rx_queue = NULL;
+
+
+static void esp_osc_receive_task(void *arg) {
+  esp_osc_client_t *client = (esp_osc_client_t *)arg;
+
+  for (;;) {
+    // receive message
+    ssize_t ret = recvfrom(client->socket, client->rbuf, client->len, MSG_DONTWAIT, NULL, NULL);
+
+    if (ret < 0) {
+      int err = errno;  // Save it immediately
+
+      if (err != EAGAIN && err != EWOULDBLOCK) {
+        ESP_LOGE(TAG, "recvfrom() failed: errno=%d (%s)", err, strerror(err));
+      }
+    } else if (ret > 0) {
+      // prepare packet
+      esp_osc_packet_t packet = {0};
+      packet.len = ret;
+
+      // copy packet into queue
+      if (ret <= ESP_OSC_MAX_PACKET_SIZE) {
+        memcpy(packet.data, client->rbuf, ret);
+
+        // queue packet
+        if (xQueueSend(rx_queue, &packet, 0) != pdTRUE) {
+          ESP_LOGW(TAG, "RX queue full, dropping packet");
+        }
+      } else {
+        ESP_LOGE(TAG, "discard too long message (%d)", ret);
+      }
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+}
+
 
 bool esp_osc_init(esp_osc_client_t *client, uint16_t buf_len, uint16_t port) {
   // free existing memory
@@ -46,8 +103,22 @@ bool esp_osc_init(esp_osc_client_t *client, uint16_t buf_len, uint16_t port) {
     }
   }
 
+  // create RX queue
+  rx_queue = xQueueCreate(ESP_OSC_QUEUE_LENGTH, sizeof(esp_osc_packet_t));
+  if (rx_queue == NULL) {
+    ESP_LOGE(TAG, "failed to create RX queue");
+    return false;
+  }
+
+  // create RX task
+  if (xTaskCreate(esp_osc_receive_task, "esp_osc_rx", 4096, client, 5, NULL) != pdPASS) {
+    ESP_LOGE(TAG, "failed to create RX task");
+    return false;
+  }
+
   return true;
 }
+
 
 esp_osc_target_t esp_osc_target(const char *address, uint16_t port) {
   // prepare target
@@ -59,6 +130,7 @@ esp_osc_target_t esp_osc_target(const char *address, uint16_t port) {
   return target;
 }
 
+
 bool esp_osc_send(esp_osc_client_t *client, esp_osc_target_t *target, const char *topic, const char *format, ...) {
   // send message
   va_list args;
@@ -68,6 +140,7 @@ bool esp_osc_send(esp_osc_client_t *client, esp_osc_target_t *target, const char
 
   return ret;
 }
+
 
 bool esp_osc_send_v(esp_osc_client_t *client, esp_osc_target_t *target, const char *topic, const char *format,
                     va_list args) {
@@ -84,35 +157,31 @@ bool esp_osc_send_v(esp_osc_client_t *client, esp_osc_target_t *target, const ch
   return true;
 }
 
+
 bool esp_osc_receive(esp_osc_client_t *client, esp_osc_callback_t callback) {
   // prepare values
   esp_osc_value_t values[32];
 
   for (;;) {
-    // receive message
-    ssize_t ret = recvfrom(client->socket, client->rbuf, client->len, 0, NULL, NULL);
-    //ESP_LOGI(TAG, "got message: %s", client->rbuf);
-    if (ret < 0) {
-      int err = errno;  // Save it immediately
-      ESP_LOGE(TAG, "recvfrom() failed: errno=%d (%s)", err, strerror(err));
-      return false;
-    } else if (ret > client->len) {
-      ESP_LOGE(TAG, "discard too long message (%d)", ret);
+    esp_osc_packet_t packet;
+
+    // receive message from queue
+    if (xQueueReceive(rx_queue, &packet, portMAX_DELAY) != pdTRUE) {
       return false;
     }
 
     // check bundle
-    if (tosc_isBundle(client->rbuf)) {
+    if (tosc_isBundle((char *)packet.data)) {
       ESP_LOGE(TAG, "discard unsupported bundle");
-      return false;
+      continue;
     }
 
     // parse message
     tosc_message msg = {0};
-    int res = tosc_parseMessage(&msg, client->rbuf, client->len);
+    int res = tosc_parseMessage(&msg, (char *)packet.data, packet.len);
     if (res < 0) {
       ESP_LOGE(TAG, "failed to parse message (%d)", res);
-      return false;
+      continue;
     }
 
     // get format
@@ -120,9 +189,9 @@ bool esp_osc_receive(esp_osc_client_t *client, esp_osc_callback_t callback) {
 
     // get size
     size_t size = strlen(fmt);
-    if (size > sizeof(values)) {
+    if (size > sizeof(values) / sizeof(values[0])) {
       ESP_LOGE(TAG, "message has too many values (%d)", size);
-      return false;
+      continue;
     }
 
     // parse values
