@@ -32,11 +32,12 @@ static void esp_osc_receive_task(void *arg) {
 
   for (;;) {
     // receive message
-    ssize_t ret = recvfrom(client->socket, client->rbuf, client->len, MSG_DONTWAIT, NULL, NULL);
-
+    // ESP_LOGI(TAG, "Waiting for UDP packet...");
+    ssize_t ret = recvfrom(client->socket, client->rbuf, client->len, 0, NULL, NULL);
+    // ESP_LOGI(TAG, "RX len=%d", (int)ret);
     if (ret < 0) {
       int err = errno;  // Save it immediately
-
+        // ESP_LOGE(TAG, "recvfrom() failed: errno=%d (%s)", err, strerror(err));
       if (err != EAGAIN && err != EWOULDBLOCK) {
         ESP_LOGE(TAG, "recvfrom() failed: errno=%d (%s)", err, strerror(err));
       }
@@ -167,7 +168,10 @@ bool esp_osc_receive(esp_osc_client_t *client, esp_osc_callback_t callback) {
 
     // receive message from queue
     if (xQueueReceive(rx_queue, &packet, portMAX_DELAY) != pdTRUE) {
+      ESP_LOGI(TAG, "DEQUEUE error len=%u", (unsigned)packet.len);
       return false;
+    } else {
+      // ESP_LOGI(TAG, "DEQUEUED len=%u", (unsigned)packet.len);
     }
 
     // check bundle
@@ -219,6 +223,7 @@ bool esp_osc_receive(esp_osc_client_t *client, esp_osc_callback_t callback) {
     }
 
     // call callback
+    // ESP_LOGI(TAG, "CALLBACK address=%s", tosc_getAddress(&msg));
     if (!callback(tosc_getAddress(&msg), fmt, values)) {
       return false;
     }
