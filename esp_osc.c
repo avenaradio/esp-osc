@@ -89,12 +89,19 @@ bool esp_osc_init(esp_osc_client_t *client, uint16_t buf_len, uint16_t port) {
     client->socket = 0;
     return false;
   }
-  
   int opt = 1;
   // Allow address reuse (prevents "Address in use" errors on reconnect)
   setsockopt(client->socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
   // Allow broadcast reception (good practice for 192.168.1.255)
   setsockopt(client->socket, SOL_SOCKET, SO_BROADCAST, &opt, sizeof(opt));
+  // Set UDP receive buffer to 8KB
+  int rcvbuf = 8192;
+  if (setsockopt(client->socket, SOL_SOCKET, SO_RCVBUF,
+                &rcvbuf, sizeof(rcvbuf)) < 0) {
+      ESP_LOGE(TAG, "SO_RCVBUF failed: errno=%d", errno);
+  } else {
+      ESP_LOGI(TAG, "UDP receive buffer set to %d bytes", rcvbuf);
+  }
 
   // bind socket if port is available
   if (port > 0) {
