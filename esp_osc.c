@@ -51,15 +51,13 @@ static void esp_osc_receive_task(void *arg) {
         memcpy(packet.data, client->rbuf, ret);
 
         // queue packet
-        if (xQueueSend(rx_queue, &packet, 0) != pdTRUE) {
+        if (xQueueSend(rx_queue, &packet, 10) != pdTRUE) {
           ESP_LOGW(TAG, "RX queue full, dropping packet");
         }
       } else {
         ESP_LOGE(TAG, "discard too long message (%d)", ret);
       }
     }
-
-    vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
 
@@ -91,6 +89,12 @@ bool esp_osc_init(esp_osc_client_t *client, uint16_t buf_len, uint16_t port) {
     client->socket = 0;
     return false;
   }
+  
+  int opt = 1;
+  // Allow address reuse (prevents "Address in use" errors on reconnect)
+  setsockopt(client->socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+  // Allow broadcast reception (good practice for 192.168.1.255)
+  setsockopt(client->socket, SOL_SOCKET, SO_BROADCAST, &opt, sizeof(opt));
 
   // bind socket if port is available
   if (port > 0) {
